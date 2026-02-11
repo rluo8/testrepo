@@ -36,5 +36,5 @@ jobs:
         uses: JamesIves/github-pages-deploy-action@v4
         with:
           folder: docs
-          target-folder: docs/${{ github.ref_name }}
+          target-folder: ${{ github.ref_name == 'main' && 'docs' || format('docs/{0}', github.ref_name) }}
           clean: false
