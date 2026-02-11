@@ -3,6 +3,7 @@ name: Deploy Page
 on:
   push:
     branches: [main, test]
+  workflow_dispatch: {}
 
 jobs:
   deploy:
