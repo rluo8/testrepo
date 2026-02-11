@@ -1,0 +1,39 @@
+name: Deploy Page
+
+on:
+  push:
+    branches: [main, test]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate HTML
+        run: |
+          mkdir -p docs
+          cat > docs/index.html << 'HTMLEOF'
+          <!DOCTYPE html>
+          <html>
+          <head><title>Report: ${{ github.ref_name }}</title></head>
+          <body>
+            <h1>Coverage Report: ${{ github.ref_name }}</h1>
+            <p>Branch: <strong>${{ github.ref_name }}</strong></p>
+            <p>Commit: <code>${{ github.sha }}</code></p>
+            <p>Time: TIMESTAMP_PLACEHOLDER</p>
+          </body>
+          </html>
+          HTMLEOF
+          sed -i "s/TIMESTAMP_PLACEHOLDER/$(date -u)/" docs/index.html
+          echo "Generated docs/index.html:"
+          cat docs/index.html
+
+      - name: Deploy to gh-pages
+        uses: JamesIves/github-pages-deploy-action@v4
+        with:
+          folder: docs
+          target-folder: docs/${{ github.ref_name }}
+          clean: false
