@@ -20,7 +20,8 @@ jobs:
 
       - name: Generate report
         run: |
-          DATE=$(date -u +%Y-%m-%d)
+          DATE=$(date -u +%Y-%m-%d-%H%M%S)
+          DATE_SHORT=$(date -u +%Y-%m-%d)
           BRANCH="${{ github.ref_name }}"
 
           # Create deploy directory structure
@@ -34,10 +35,11 @@ jobs:
           <head><title>Test Report: ${BRANCH} - ${DATE}</title></head>
           <body>
             <h1>Test Report: ${BRANCH}</h1>
-            <p>Date: <strong>${DATE}</strong></p>
+            <p>Date: <strong>${DATE_SHORT}</strong></p>
+            <p>Time: <strong>${DATE}</strong></p>
             <p>Branch: <strong>${BRANCH}</strong></p>
             <p>Commit: <code>${{ github.sha }}</code></p>
-            <p>Time: $(date -u)</p>
+            <p>Generated: $(date -u)</p>
           </body>
           </html>
           HTMLEOF
