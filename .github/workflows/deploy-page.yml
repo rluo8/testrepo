@@ -12,29 +12,94 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: gh-pages-current
 
-      - name: Generate HTML
+      - name: Generate report
         run: |
-          mkdir -p docs
-          cat > docs/index.html << 'HTMLEOF'
+          DATE=$(date -u +%Y-%m-%d)
+          BRANCH="${{ github.ref_name }}"
+
+          # Create deploy directory structure
+          mkdir -p deploy/report/$DATE
+          mkdir -p deploy/report/latest
+
+          # Generate dated report
+          cat > deploy/report/$DATE/index.html << HTMLEOF
           <!DOCTYPE html>
           <html>
-          <head><title>Report: ${{ github.ref_name }}</title></head>
+          <head><title>Test Report: ${BRANCH} - ${DATE}</title></head>
           <body>
-            <h1>Coverage Report: ${{ github.ref_name }}</h1>
-            <p>Branch: <strong>${{ github.ref_name }}</strong></p>
+            <h1>Test Report: ${BRANCH}</h1>
+            <p>Date: <strong>${DATE}</strong></p>
+            <p>Branch: <strong>${BRANCH}</strong></p>
             <p>Commit: <code>${{ github.sha }}</code></p>
-            <p>Time: TIMESTAMP_PLACEHOLDER</p>
+            <p>Time: $(date -u)</p>
           </body>
           </html>
           HTMLEOF
-          sed -i "s/TIMESTAMP_PLACEHOLDER/$(date -u)/" docs/index.html
-          echo "Generated docs/index.html:"
-          cat docs/index.html
+
+          # Copy as latest
+          cp deploy/report/$DATE/index.html deploy/report/latest/index.html
+
+          # Generate index page listing all historical reports
+          # First, collect existing reports from gh-pages
+          EXISTING_DATES=""
+          if [ -d "gh-pages-current/docs/report" ]; then
+            EXISTING_DATES=$(ls -d gh-pages-current/docs/report/20* 2>/dev/null | xargs -I{} basename {} | sort -r || true)
+          fi
+
+          # Build index.html
+          cat > deploy/report/index.html << 'IDXHEAD'
+          <!DOCTYPE html>
+          <html>
+          <head><title>Test Reports</title></head>
+          <body>
+            <h1>Test Reports</h1>
+            <ul>
+              <li><a href="latest/">Latest</a></li>
+          IDXHEAD
+
+          # Add current date
+          echo "      <li><a href=\"$DATE/\">$DATE ($BRANCH)</a></li>" >> deploy/report/index.html
+
+          # Add existing dates (skip if same as current)
+          for d in $EXISTING_DATES; do
+            if [ "$d" != "$DATE" ] && [ "$d" != "latest" ] && [ "$d" != "index.html" ]; then
+              echo "      <li><a href=\"$d/\">$d</a></li>" >> deploy/report/index.html
+            fi
+          done
+
+          cat >> deploy/report/index.html << 'IDXTAIL'
+            </ul>
+          </body>
+          </html>
+          IDXTAIL
+
+          # Clean up old reports (keep last 30)
+          ALL_DATES=$(echo -e "$DATE\n$EXISTING_DATES" | grep "^20" | sort -ru)
+          KEEP=30
+          i=0
+          for d in $ALL_DATES; do
+            i=$((i+1))
+            if [ $i -gt $KEEP ]; then
+              echo "Removing old report: $d"
+              rm -rf "gh-pages-current/docs/report/$d" 2>/dev/null || true
+            else
+              # Preserve existing reports in deploy dir
+              if [ "$d" != "$DATE" ] && [ -d "gh-pages-current/docs/report/$d" ]; then
+                cp -r "gh-pages-current/docs/report/$d" "deploy/report/$d"
+              fi
+            fi
+          done
+
+          echo "=== Deploy structure ==="
+          find deploy -type f
 
       - name: Deploy to gh-pages
         uses: JamesIves/github-pages-deploy-action@v4
         with:
-          folder: docs
-          target-folder: ${{ github.ref_name == 'main' && 'docs' || format('docs/{0}', github.ref_name) }}
+          folder: deploy
+          target-folder: docs
           clean: false
