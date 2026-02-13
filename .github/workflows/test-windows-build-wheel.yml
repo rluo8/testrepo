@@ -120,19 +120,21 @@ jobs:
           echo "=== Verifying patches were applied ==="
           
           echo "1. cuda_bindings\setup.py (build_dir):"
-          Select-String -Path "cuda_bindings\setup.py" -Pattern 'build_dir=' | Select-Object -First 1
+          Select-String -Path "cuda_bindings\setup.py" -Pattern 'build_dir=' | Select-Object -First 1 | ForEach-Object { $_.Line.Trim() }
           
           echo ""
           echo "2. cuda_bindings\pyproject.toml (package-data):"
-          Select-String -Path "cuda_bindings\pyproject.toml" -Pattern '\[tool.setuptools.package-data\]' -Context 0,4
+          $lineNum = (Select-String -Path "cuda_bindings\pyproject.toml" -Pattern '\[tool.setuptools.package-data\]').LineNumber
+          Get-Content "cuda_bindings\pyproject.toml" | Select-Object -Skip ($lineNum - 1) -First 5
           
           echo ""
           echo "3. cuda_core\build_hooks.py (build_dir):"
-          Select-String -Path "cuda_core\build_hooks.py" -Pattern 'build_dir=' | Select-Object -First 1
+          Select-String -Path "cuda_core\build_hooks.py" -Pattern 'build_dir=' | Select-Object -First 1 | ForEach-Object { $_.Line.Trim() }
           
           echo ""
           echo "4. cuda_core\pyproject.toml (package-data):"
-          Select-String -Path "cuda_core\pyproject.toml" -Pattern '\[tool.setuptools.package-data\]' -Context 0,5
+          $lineNum = (Select-String -Path "cuda_core\pyproject.toml" -Pattern '\[tool.setuptools.package-data\]').LineNumber
+          Get-Content "cuda_core\pyproject.toml" | Select-Object -Skip ($lineNum - 1) -First 6
           
           echo "=== Verification complete ==="
 
