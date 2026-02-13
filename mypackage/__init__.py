@@ -5,6 +5,13 @@ MyPackage - A simple package with Python and Cython code
 __version__ = "0.1.0"
 
 from .calculator import Calculator, fibonacci
+from .string_utils import (
+    reverse_string,
+    count_words,
+    capitalize_words,
+    is_palindrome,
+    truncate
+)
 
 try:
     from .cython_math import fast_multiply, fast_power, sum_array
@@ -19,4 +26,15 @@ except ImportError:
     def sum_array(arr):
         return sum(arr)
 
-__all__ = ["Calculator", "fibonacci", "fast_multiply", "fast_power", "sum_array"]
+__all__ = [
+    "Calculator",
+    "fibonacci",
+    "fast_multiply",
+    "fast_power",
+    "sum_array",
+    "reverse_string",
+    "count_words",
+    "capitalize_words",
+    "is_palindrome",
+    "truncate"
+]
