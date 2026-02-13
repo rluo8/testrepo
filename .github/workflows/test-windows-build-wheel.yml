@@ -108,8 +108,8 @@ jobs:
           (Get-Content $buildHooksPath -Raw) -replace 'build_dir="build/cython",', 'build_dir=".",' | Set-Content $buildHooksPath -NoNewline
 
           $pyprojectPath = "cuda_core\pyproject.toml"
-          # Add *.cpp to the "*" pattern (using capture groups)
-          (Get-Content $pyprojectPath -Raw) -replace '"\*" = \["(\*\.pxd)"\]', '"*" = ["$1", "*.cpp"]' | Set-Content $pyprojectPath -NoNewline
+          # Add *.pxi, *.cpp, *.pyx to the "*" pattern (using capture groups)
+          (Get-Content $pyprojectPath -Raw) -replace '"\*" = \["(\*\.pxd)"\]', '"*" = ["$1", "*.pxi", "*.cpp", "*.pyx"]' | Set-Content $pyprojectPath -NoNewline
 
           echo "Applied coverage patches to cuda_core"
 
