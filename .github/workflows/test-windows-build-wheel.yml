@@ -1,0 +1,200 @@
+# Test Windows wheel building for cuda-python
+# Only tests wheel building, no GPU tests
+
+name: "Test: Windows Build Wheel"
+
+on:
+  workflow_dispatch: {}  # 仅手动触发
+
+env:
+  PY_VER: "3.14"
+  CUDA_VER: "13.1.0"
+  CUDA_PYTHON_COVERAGE: "1"
+
+jobs:
+  build-wheel-windows:
+    name: Build Wheels (Windows)
+    runs-on: windows-2022
+    defaults:
+      run:
+        shell: bash --noprofile --norc -xeuo pipefail {0}
+    steps:
+      - name: Checkout test repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PY_VER }}
+
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Set up mini CTK
+        run: |
+          CUDA_VERSION="${{ env.CUDA_VER }}"
+          CTK_BASE_URL="https://developer.download.nvidia.com/compute/cuda/redist"
+          CTK_JSON_URL="${CTK_BASE_URL}/redistrib_${CUDA_VERSION}.json"
+          CTK_SUBDIR="windows-x86_64"
+          CUDA_PATH="$(pwd)/cuda_toolkit"
+          mkdir -p "$CUDA_PATH"
+
+          echo "Downloading mini CTK ${CUDA_VERSION} for ${CTK_SUBDIR}..."
+
+          COMPONENTS="cuda_nvcc cuda_cudart cuda_nvrtc cuda_profiler_api cuda_cccl libnvjitlink"
+
+          CUDA_MAJOR=$(echo "$CUDA_VERSION" | cut -d'.' -f1)
+          if [[ "$CUDA_MAJOR" -ge 13 ]]; then
+            COMPONENTS="$COMPONENTS cuda_crt libnvvm libnvfatbin"
+          fi
+
+          for component in $COMPONENTS; do
+            echo "--- Fetching ${component} ---"
+            REL_PATH=$(curl -sL "$CTK_JSON_URL" | \
+              python -c "import sys, json; print(json.load(sys.stdin)['${component}']['${CTK_SUBDIR}']['relative_path'])")
+            COMPONENT_URL="${CTK_BASE_URL}/${REL_PATH}"
+            FILENAME=$(basename "$REL_PATH")
+
+            curl -kLSs "$COMPONENT_URL" -o "$FILENAME"
+            TEMP_DIR=$(mktemp -d)
+            unzip -q "$FILENAME" -d "$TEMP_DIR"
+            cp -r "$TEMP_DIR"/*/* "$CUDA_PATH"/
+            rm -rf "$TEMP_DIR" "$FILENAME"
+            echo "  - Installed ${component}"
+          done
+
+          echo ""
+          echo "=== Mini CTK contents ==="
+          ls -l "$CUDA_PATH"
+          ls -l "$CUDA_PATH/bin/" | head -10
+          ls -l "$CUDA_PATH/include/" | head -10
+
+          CUDA_PATH_WIN=$(cygpath -w "$CUDA_PATH")
+          echo "CUDA_PATH=${CUDA_PATH_WIN}" >> $GITHUB_ENV
+          echo "CUDA_HOME=${CUDA_PATH_WIN}" >> $GITHUB_ENV
+          echo "$(cygpath -w "$CUDA_PATH/bin")" >> $GITHUB_PATH
+
+      - name: Verify CUDA toolkit
+        run: |
+          echo "CUDA_PATH=$CUDA_PATH"
+          nvcc --version || echo "nvcc not in PATH, checking CUDA_PATH..."
+          ls -l "$CUDA_PATH/bin/nvcc"* 2>/dev/null || true
+
+      - name: Clone cuda-python repository
+        run: |
+          git clone https://github.com/NVIDIA/cuda-python.git
+          cd cuda-python
+          echo "Cloned cuda-python repository"
+          git log -1 --oneline
+
+      - name: Patch cuda_bindings for Cython coverage
+        shell: pwsh
+        run: |
+          cd cuda-python
+          $setupPath = "cuda_bindings\setup.py"
+          (Get-Content $setupPath -Raw) -replace 'build_dir="build/cython",', 'build_dir=".",' | Set-Content $setupPath -NoNewline
+
+          $pyprojectPath = "cuda_bindings\pyproject.toml"
+          # Add *.cpp and *.pyx to package-data (using capture groups)
+          (Get-Content $pyprojectPath -Raw) -replace '"\*" = \["(\*\.pxd)", "(\*\.pxi)"\]', '"*" = ["$1", "$2", "*.cpp", "*.pyx"]' | Set-Content $pyprojectPath -NoNewline
+
+          echo "Applied coverage patches to cuda_bindings"
+
+      - name: Patch cuda_core for Cython coverage
+        shell: pwsh
+        run: |
+          cd cuda-python
+          $buildHooksPath = "cuda_core\build_hooks.py"
+          (Get-Content $buildHooksPath -Raw) -replace 'build_dir="build/cython",', 'build_dir=".",' | Set-Content $buildHooksPath -NoNewline
+
+          $pyprojectPath = "cuda_core\pyproject.toml"
+          # Add *.cpp to the "*" pattern (using capture groups)
+          (Get-Content $pyprojectPath -Raw) -replace '"\*" = \["(\*\.pxd)"\]', '"*" = ["$1", "*.cpp"]' | Set-Content $pyprojectPath -NoNewline
+
+          echo "Applied coverage patches to cuda_core"
+
+      - name: Verify patches were applied
+        shell: pwsh
+        run: |
+          cd cuda-python
+          echo "=== Verifying patches were applied ==="
+          
+          echo "1. cuda_bindings\setup.py (build_dir):"
+          Select-String -Path "cuda_bindings\setup.py" -Pattern 'build_dir=' | Select-Object -First 1
+          
+          echo ""
+          echo "2. cuda_bindings\pyproject.toml (package-data):"
+          Select-String -Path "cuda_bindings\pyproject.toml" -Pattern '\[tool.setuptools.package-data\]' -Context 0,4
+          
+          echo ""
+          echo "3. cuda_core\build_hooks.py (build_dir):"
+          Select-String -Path "cuda_core\build_hooks.py" -Pattern 'build_dir=' | Select-Object -First 1
+          
+          echo ""
+          echo "4. cuda_core\pyproject.toml (package-data):"
+          Select-String -Path "cuda_core\pyproject.toml" -Pattern '\[tool.setuptools.package-data\]' -Context 0,5
+          
+          echo "=== Verification complete ==="
+
+      - name: Build cuda.pathfinder wheel
+        run: |
+          cd cuda-python
+          pip install wheel setuptools
+          cd cuda_pathfinder
+          pip wheel -v --no-deps . -w ../wheels/
+          echo "- Built cuda.pathfinder wheel"
+
+      - name: Build cuda.bindings wheel
+        run: |
+          cd cuda-python
+          pip install Cython pyclibrary
+          cd cuda_bindings
+          pip wheel -v --no-deps . -w ../wheels/
+          echo "- Built cuda.bindings wheel"
+
+      - name: Build cuda.core wheel
+        run: |
+          cd cuda-python
+          export PIP_FIND_LINKS="$(pwd)/wheels"
+          export PIP_PRE=1
+          cd cuda_core
+          pip wheel -v --no-deps . -w ../wheels/
+          echo "- Built cuda.core wheel"
+
+      - name: List wheel artifacts
+        run: |
+          echo "=== Windows wheel artifacts ==="
+          ls -lahR cuda-python/wheels/
+
+      - name: Inspect wheel contents
+        run: |
+          cd cuda-python/wheels
+          for whl in *.whl; do
+            echo ""
+            echo "=========================================="
+            echo "Wheel: $whl"
+            echo "=========================================="
+            unzip -l "$whl" | tail -n +4 | head -n -2 | awk '{print $4}' | sort
+          done
+
+      - name: Upload Windows wheel artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-wheels
+          path: cuda-python/wheels/
+          if-no-files-found: error
+
+      - name: Test Summary
+        run: |
+          echo "=========================================="
+          echo "WINDOWS WHEEL BUILD TEST SUMMARY"
+          echo "=========================================="
+          echo ""
+          echo "✓ MSVC set up successfully"
+          echo "✓ Mini CUDA Toolkit ${CUDA_VER} downloaded and configured"
+          echo "✓ cuda.pathfinder wheel built"
+          echo "✓ cuda.bindings wheel built"
+          echo "✓ cuda.core wheel built"
+          echo ""
+          echo "All wheels built successfully!"
+          echo "=========================================="
