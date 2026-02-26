@@ -186,14 +186,6 @@ jobs:
       - name: Verify patch was applied
         run: |
           cd cuda-python
-          echo "=== Verifying patch ==="
-          echo "1. cuda_bindings/setup.py (build_dir):"
-          grep -n 'build_dir\|COMPILE_FOR_COVERAGE' cuda_bindings/setup.py | tail -10
-
-          echo ""
-          echo "2. cuda_bindings/setup.py (package_data):"
-          grep -n 'package_data\|\.cpp' cuda_bindings/setup.py | tail -10
-
           echo "- Patch applied successfully"
 
       - name: Build cuda.pathfinder wheel
