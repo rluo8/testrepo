@@ -1,0 +1,2 @@
+# Patch files: preserve original line endings (no conversion)
+*.patch -text
