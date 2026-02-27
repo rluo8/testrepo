@@ -1,0 +1,117 @@
+# Build cuda-python wheels on Windows and list all files inside each wheel
+name: "Test: Windows Wheel List"
+
+on:
+  workflow_dispatch: {}
+
+env:
+  PY_VER: "3.14"
+  CUDA_VER: "13.1.0"
+
+jobs:
+  build-and-list:
+    name: Build & List Wheel Contents (Windows)
+    runs-on: windows-2022
+    defaults:
+      run:
+        shell: bash --noprofile --norc -xeuo pipefail {0}
+    steps:
+      - name: Checkout test repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PY_VER }}
+
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Set up mini CTK
+        run: |
+          CUDA_VERSION="${{ env.CUDA_VER }}"
+          CTK_BASE_URL="https://developer.download.nvidia.com/compute/cuda/redist"
+          CTK_JSON_URL="${CTK_BASE_URL}/redistrib_${CUDA_VERSION}.json"
+          CTK_SUBDIR="windows-x86_64"
+          CUDA_PATH="$(pwd)/cuda_toolkit"
+          mkdir -p "$CUDA_PATH"
+
+          echo "Downloading mini CTK ${CUDA_VERSION} for ${CTK_SUBDIR}..."
+
+          COMPONENTS="cuda_nvcc cuda_cudart cuda_nvrtc cuda_profiler_api cuda_cccl libnvjitlink"
+          CUDA_MAJOR=$(echo "$CUDA_VERSION" | cut -d'.' -f1)
+          if [[ "$CUDA_MAJOR" -ge 13 ]]; then
+            COMPONENTS="$COMPONENTS cuda_crt libnvvm libnvfatbin"
+          fi
+
+          for component in $COMPONENTS; do
+            echo "--- Fetching ${component} ---"
+            REL_PATH=$(curl -sL "$CTK_JSON_URL" | \
+              python -c "import sys, json; print(json.load(sys.stdin)['${component}']['${CTK_SUBDIR}']['relative_path'])")
+            curl -kLSs "${CTK_BASE_URL}/${REL_PATH}" -o "$(basename "$REL_PATH")"
+            TEMP_DIR=$(mktemp -d)
+            unzip -q "$(basename "$REL_PATH")" -d "$TEMP_DIR"
+            cp -r "$TEMP_DIR"/*/* "$CUDA_PATH"/
+            rm -rf "$TEMP_DIR" "$(basename "$REL_PATH")"
+            echo "  - Installed ${component}"
+          done
+
+          CUDA_PATH_WIN=$(cygpath -w "$CUDA_PATH")
+          echo "CUDA_PATH=${CUDA_PATH_WIN}" >> $GITHUB_ENV
+          echo "CUDA_HOME=${CUDA_PATH_WIN}" >> $GITHUB_ENV
+          echo "$(cygpath -w "$CUDA_PATH/bin")" >> $GITHUB_PATH
+
+      - name: Verify CUDA toolkit
+        run: |
+          echo "CUDA_PATH=$CUDA_PATH"
+          nvcc --version
+
+      - name: Clone cuda-python
+        run: |
+          git clone https://github.com/NVIDIA/cuda-python.git
+          cd cuda-python
+          git log -1 --oneline
+
+      - name: Build cuda.pathfinder wheel
+        run: |
+          cd cuda-python
+          pip install wheel setuptools
+          cd cuda_pathfinder
+          pip wheel -v --no-deps . -w ../wheels/
+
+      - name: Build cuda.bindings wheel
+        run: |
+          cd cuda-python
+          pip install Cython pyclibrary
+          cd cuda_bindings
+          pip wheel -v --no-deps . -w ../wheels/
+
+      - name: Build cuda.core wheel
+        run: |
+          cd cuda-python
+          export PIP_FIND_LINKS="$(pwd)/wheels"
+          export PIP_PRE=1
+          cd cuda_core
+          pip wheel -v --no-deps . -w ../wheels/
+
+      - name: List all files inside each wheel
+        run: |
+          cd cuda-python/wheels
+          for whl in *.whl; do
+            echo ""
+            echo "=========================================="
+            echo "  $whl"
+            echo "=========================================="
+            unzip -l "$whl" | tail -n +4 | head -n -2 | awk '{printf "%-10s %s\n", $1, $4}' | sort -k2
+            echo ""
+            FILE_COUNT=$(unzip -l "$whl" | tail -n +4 | head -n -2 | wc -l)
+            TOTAL_SIZE=$(unzip -l "$whl" | grep -E '^\s+-----' -A1 | tail -1 | awk '{print $1}')
+            echo "  Total files: $FILE_COUNT | Uncompressed size: $TOTAL_SIZE bytes"
+          done
+
+      - name: Upload wheel artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-wheels
+          path: cuda-python/wheels/
+          if-no-files-found: error

@@ -95,7 +95,7 @@ jobs:
     name: Build Wheels (Windows)
     runs-on: windows-2022
     env:
-      CUDA_PYTHON_COVERAGE: "1"
+      CUDA_PYTHON_COVERAGE: "0"
     defaults:
       run:
         shell: bash --noprofile --norc -xeuo pipefail {0}
@@ -230,7 +230,7 @@ jobs:
     needs: [build-wheel-windows]
     runs-on: windows-latest
     env:
-      CUDA_PYTHON_COVERAGE: "1"
+      CUDA_PYTHON_COVERAGE: "0"
     defaults:
       run:
         shell: bash --noprofile --norc -xeuo pipefail {0}
