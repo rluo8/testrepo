@@ -90,30 +90,3 @@ index 4a501edc1..ad02428d7 100644
 +    package_data=package_data,
      zip_safe=False,
  )
-diff --git a/cuda_core/tests/test_cuda_utils.py b/cuda_core/tests/test_cuda_utils.py
-index c68f8fb84..3324a44d1 100644
---- a/cuda_core/tests/test_cuda_utils.py
-+++ b/cuda_core/tests/test_cuda_utils.py
-@@ -17,8 +17,9 @@ def test_driver_cu_result_explanations_health():
-         assert code in expl_dict
-         known_codes.add(code)
- 
--    if cuda_utils.get_binding_version() >= (13, 0):
--        # Ensure expl_dict has no codes not known as a CUresult enum
-+    # The explanations were updated to CTK 13.1.0 in PR #1315,
-+    # so only enforce strict "no extra entries" for bindings >= 13.1.
-+    if cuda_utils.get_binding_version() >= (13, 1):
-         extra_expl = sorted(set(expl_dict.keys()) - known_codes)
-         assert not extra_expl
- 
-@@ -33,8 +34,9 @@ def test_runtime_cuda_error_explanations_health():
-         assert code in expl_dict
-         known_codes.add(code)
- 
--    if cuda_utils.get_binding_version() >= (13, 0):
--        # Ensure expl_dict has no codes not known as a cudaError_t enum
-+    # The explanations were updated to CTK 13.1.0 in PR #1315,
-+    # so only enforce strict "no extra entries" for bindings >= 13.1.
-+    if cuda_utils.get_binding_version() >= (13, 1):
-         extra_expl = sorted(set(expl_dict.keys()) - known_codes)
-         assert not extra_expl
