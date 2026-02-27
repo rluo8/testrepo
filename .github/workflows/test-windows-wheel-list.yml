@@ -102,11 +102,21 @@ jobs:
             echo "=========================================="
             echo "  $whl"
             echo "=========================================="
-            unzip -l "$whl" | tail -n +4 | head -n -2 | awk '{printf "%-10s %s\n", $1, $4}' | sort -k2
-            echo ""
-            FILE_COUNT=$(unzip -l "$whl" | tail -n +4 | head -n -2 | wc -l)
-            TOTAL_SIZE=$(unzip -l "$whl" | grep -E '^\s+-----' -A1 | tail -1 | awk '{print $1}')
-            echo "  Total files: $FILE_COUNT | Uncompressed size: $TOTAL_SIZE bytes"
+            python -c "
+          import zipfile, os, sys
+          whl = sys.argv[1]
+          total = 0
+          entries = []
+          with zipfile.ZipFile(whl) as zf:
+              for info in zf.infolist():
+                  entries.append((info.file_size, info.filename))
+                  total += info.file_size
+          entries.sort(key=lambda x: x[1])
+          for size, name in entries:
+              print(f'{size:<12} {name}')
+          print()
+          print(f'  Total files: {len(entries)} | Uncompressed size: {total} bytes')
+          " "$whl"
           done
 
       - name: Upload wheel artifacts
