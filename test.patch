@@ -12,7 +12,7 @@ index e83485fc4..3d3849ad6 100644
          **extra_cythonize_kwargs,
      )
 diff --git a/cuda_bindings/setup.py b/cuda_bindings/setup.py
-index adbf843fd..09779ead2 100644
+index adbf843fd..2f6069c73 100644
 --- a/cuda_bindings/setup.py
 +++ b/cuda_bindings/setup.py
 @@ -9,6 +9,7 @@ from warnings import warn
@@ -27,7 +27,7 @@ index adbf843fd..09779ead2 100644
  else:
      nthreads = int(os.environ.get("CUDA_PYTHON_PARALLEL_LEVEL", "0") or "0")
  
-+coverage_mode = os.environ.get("CUDA_PYTHON_COVERAGE", "0") != "0"
++coverage_mode = bool(int(os.environ.get("CUDA_PYTHON_COVERAGE", "0")))
 +
  
  def _is_clang(compiler):
@@ -66,7 +66,7 @@ index 5d615ad00..010133219 100644
          compiler_directives=compiler_directives,
          compile_time_env=compile_time_env,
 diff --git a/cuda_core/setup.py b/cuda_core/setup.py
-index 4a501edc1..a909d0964 100644
+index 4a501edc1..16758dece 100644
 --- a/cuda_core/setup.py
 +++ b/cuda_core/setup.py
 @@ -7,8 +7,10 @@ import os
@@ -76,7 +76,7 @@ index 4a501edc1..a909d0964 100644
 +from setuptools.command.build_py import build_py as _build_py
  
  nthreads = int(os.environ.get("CUDA_PYTHON_PARALLEL_LEVEL", os.cpu_count() // 2))
-+coverage_mode = os.environ.get("CUDA_PYTHON_COVERAGE", "0") != "0"
++coverage_mode = bool(int(os.environ.get("CUDA_PYTHON_COVERAGE", "0")))
  
  
  class build_ext(_build_ext):
