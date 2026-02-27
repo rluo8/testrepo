@@ -94,31 +94,6 @@ jobs:
           cd cuda_core
           pip wheel -v --no-deps . -w ../wheels/
 
-      - name: List all files inside each wheel
-        run: |
-          cd cuda-python/wheels
-          for whl in *.whl; do
-            echo ""
-            echo "=========================================="
-            echo "  $whl"
-            echo "=========================================="
-            python -c "
-          import zipfile, os, sys
-          whl = sys.argv[1]
-          total = 0
-          entries = []
-          with zipfile.ZipFile(whl) as zf:
-              for info in zf.infolist():
-                  entries.append((info.file_size, info.filename))
-                  total += info.file_size
-          entries.sort(key=lambda x: x[1])
-          for size, name in entries:
-              print(f'{size:<12} {name}')
-          print()
-          print(f'  Total files: {len(entries)} | Uncompressed size: {total} bytes')
-          " "$whl"
-          done
-
       - name: Upload wheel artifacts
         uses: actions/upload-artifact@v4
         with:
