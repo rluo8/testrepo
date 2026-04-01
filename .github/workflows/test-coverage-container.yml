@@ -1,0 +1,104 @@
+# Test workflow: Linux coverage job running inside a container
+# Mirrors the cuda-python/.github/workflows/coverage.yml container pattern
+# on GitHub-hosted runners (no GPU).
+#
+# Steps match coverage.yml's coverage-linux job up to "Build cuda-pathfinder",
+# skipping self-hosted-only steps (nvidia-smi, proxy cache, AGENT_TOOLSDIRECTORY).
+
+name: "Test: Coverage Container (Linux)"
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [ test-coverage ]
+
+env:
+  PY_VER: "3.14"
+  LOCAL_CTK: "1"
+
+jobs:
+  coverage-linux-container:
+    name: Coverage (Linux, container)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash --noprofile --norc -xeuo pipefail {0}
+    env:
+      HOST_PLATFORM: "linux-64"
+      ARCH: "x86_64"
+    container:
+      image: ubuntu:22.04
+      options: -u root --security-opt seccomp=unconfined --shm-size 16g
+    steps:
+      # -- coverage.yml skipped: "Ensure GPU is working" (no GPU on GitHub-hosted) --
+
+      - name: Install git
+        run: |
+          apt-get update
+          apt-get install -y git
+
+      - name: Checkout test repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Mark workspace as safe for git
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Install dependencies
+        run: |
+          apt-get install -y tree rsync libsqlite3-0 g++ jq wget libgl1 libegl1 ca-certificates curl
+
+      # -- coverage.yml skipped: "Setup proxy cache" (not self-hosted) --
+
+      - name: Set environment variables
+        run: |
+          echo "CUDA_PYTHON_COVERAGE=1" >> $GITHUB_ENV
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PY_VER }}
+
+      # -- coverage.yml skipped: "Set up mini CTK" (not needed for pathfinder) --
+
+      - name: Clone cuda-python repository
+        run: |
+          git clone https://github.com/NVIDIA/cuda-python.git
+          cd cuda-python
+          echo "Cloned cuda-python"
+          git log -1 --oneline
+
+      - name: Apply coverage patch
+        run: |
+          cd cuda-python
+          if [ -f "$GITHUB_WORKSPACE/test.patch" ]; then
+            git apply "$GITHUB_WORKSPACE/test.patch"
+            echo "Applied test.patch"
+          else
+            echo "No test.patch found, skipping"
+          fi
+
+      - name: Create venv
+        run: |
+          python -m venv cuda-python/.venv
+
+      - name: Build cuda-pathfinder
+        run: |
+          cd cuda-python/cuda_pathfinder
+          ../.venv/bin/pip install -v . --group test
+
+      - name: Install coverage tools
+        run: |
+          cuda-python/.venv/bin/pip install coverage pytest-cov Cython
+
+      - name: Set cuda package install root
+        run: |
+          echo "INSTALL_ROOT=$(cuda-python/.venv/bin/python -c 'import cuda; import os; print(os.path.dirname(cuda.__path__[0]))')" >> $GITHUB_ENV
+          echo "REPO_ROOT=$(pwd)/cuda-python" >> $GITHUB_ENV
+
+      - name: Run cuda.pathfinder tests
+        continue-on-error: true
+        run: |
+          cd $INSTALL_ROOT
+          $REPO_ROOT/.venv/bin/pytest -v --cov=./cuda --cov-append --cov-context=test --cov-config=$REPO_ROOT/.coveragerc $REPO_ROOT/cuda_pathfinder/tests
