@@ -28,7 +28,7 @@ jobs:
       ARCH: "x86_64"
     container:
       image: ubuntu:24.04
-      # options: -u root --security-opt seccomp=unconfined --shm-size 16g  # disabled to test default user
+      options: -u root --security-opt seccomp=unconfined --shm-size 16g
     steps:
       # -- coverage.yml skipped: "Ensure GPU is working" (no GPU on GitHub-hosted) --
 
@@ -42,6 +42,10 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Fix workspace ownership
+        run: |
+          chown -R $(id -u):$(id -g) "$GITHUB_WORKSPACE"
+
       - name: Debug ownership info
         run: |
           echo "=== Current user ==="
@@ -54,9 +58,6 @@ jobs:
           echo ""
           echo "=== Workspace parent ==="
           ls -la "$(dirname "$GITHUB_WORKSPACE")"
-          echo ""
-          echo "=== /github/home ==="
-          ls -la /github/home/ 2>/dev/null || echo "(not found)"
           echo ""
           echo "=== git safe.directory config ==="
           git config --global --get-all safe.directory 2>/dev/null || echo "(none set)"
