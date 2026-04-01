@@ -27,7 +27,7 @@ jobs:
       HOST_PLATFORM: "linux-64"
       ARCH: "x86_64"
     container:
-      image: ubuntu:22.04
+      image: ubuntu:24.04
       options: -u root --security-opt seccomp=unconfined --shm-size 16g
     steps:
       # -- coverage.yml skipped: "Ensure GPU is working" (no GPU on GitHub-hosted) --
