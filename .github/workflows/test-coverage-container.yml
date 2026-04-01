@@ -42,9 +42,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Mark workspace as safe for git
-        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-
       - name: Install dependencies
         run: |
           apt-get install -y tree rsync libsqlite3-0 g++ jq wget libgl1 libegl1 ca-certificates curl
