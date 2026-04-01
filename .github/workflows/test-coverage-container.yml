@@ -42,6 +42,29 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Debug ownership info
+        run: |
+          echo "=== Current user ==="
+          id
+          whoami
+          echo ""
+          echo "=== GITHUB_WORKSPACE ==="
+          echo "$GITHUB_WORKSPACE"
+          ls -la "$GITHUB_WORKSPACE"
+          echo ""
+          echo "=== Workspace parent ==="
+          ls -la "$(dirname "$GITHUB_WORKSPACE")"
+          echo ""
+          echo "=== /github/home ==="
+          ls -la /github/home/ 2>/dev/null || echo "(not found)"
+          echo ""
+          echo "=== git safe.directory config ==="
+          git config --global --get-all safe.directory 2>/dev/null || echo "(none set)"
+          echo ""
+          echo "=== git status in workspace ==="
+          cd "$GITHUB_WORKSPACE"
+          git status 2>&1 || echo "(git status failed)"
+
       - name: Install dependencies
         run: |
           apt-get install -y tree rsync libsqlite3-0 g++ jq wget libgl1 libegl1 ca-certificates curl
