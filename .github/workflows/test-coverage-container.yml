@@ -69,16 +69,6 @@ jobs:
           echo "Cloned cuda-python"
           git log -1 --oneline
 
-      - name: Apply coverage patch
-        run: |
-          cd cuda-python
-          if [ -f "$GITHUB_WORKSPACE/test.patch" ]; then
-            git apply "$GITHUB_WORKSPACE/test.patch"
-            echo "Applied test.patch"
-          else
-            echo "No test.patch found, skipping"
-          fi
-
       - name: Create venv
         run: |
           python -m venv cuda-python/.venv
