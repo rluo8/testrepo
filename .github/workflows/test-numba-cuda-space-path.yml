@@ -1,0 +1,159 @@
+# Reproduce the `testing/generate_raw_ltoir.py` bug in numba-cuda that only
+# triggers when the CUDA toolkit is installed at a path that contains a space
+# (e.g. the default `C:\Program Files\NVIDIA GPU Computing Toolkit\...`).
+#
+# Expected outcome on an unpatched numba-cuda `main`:
+#   The "Build test fixtures" step fails with an NVRTC error because
+#   `generate_raw_ltoir.py` splits the `nvcc -v` `INCLUDES=` line with
+#   a naive `str.split()` that does not respect quoted, space-containing
+#   paths.
+#
+# Expected outcome with the `shlex.split(..., posix=False)` fix applied:
+#   All .ltoir files are generated successfully and the job turns green.
+
+name: "Test: numba-cuda with space in CUDA path"
+
+on:
+  workflow_dispatch:
+    inputs:
+      numba_cuda_repo:
+        description: "numba-cuda repo URL"
+        default: "https://github.com/NVIDIA/numba-cuda.git"
+      numba_cuda_ref:
+        description: "numba-cuda git ref (branch/tag/sha)"
+        default: "main"
+      cuda_version:
+        description: "CUDA version for mini CTK"
+        default: "13.0.2"
+      gpu_cc:
+        description: "GPU compute capability to build fixtures for"
+        default: "86"
+
+jobs:
+  reproduce:
+    name: Reproduce space-path bug on Windows
+    runs-on: windows-2022
+    defaults:
+      run:
+        shell: bash --noprofile --norc -xeuo pipefail {0}
+    env:
+      PY_VER: "3.12"
+
+    steps:
+      - name: Checkout this test repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PY_VER }}
+
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Download mini CTK into a path that CONTAINS A SPACE
+        run: |
+          CUDA_VERSION="${{ inputs.cuda_version }}"
+          CTK_BASE_URL="https://developer.download.nvidia.com/compute/cuda/redist"
+          CTK_JSON_URL="${CTK_BASE_URL}/redistrib_${CUDA_VERSION}.json"
+          CTK_SUBDIR="windows-x86_64"
+
+          # >>> The whole point of this workflow: put CTK under a dir with a space.
+          CUDA_PATH="$(pwd)/cuda toolkit with space"
+          mkdir -p "${CUDA_PATH}"
+
+          CUDA_MAJOR=$(echo "${CUDA_VERSION}" | cut -d. -f1)
+          COMPONENTS="cuda_nvcc cuda_cudart cuda_nvrtc cuda_cccl"
+          if [[ "${CUDA_MAJOR}" -ge 13 ]]; then
+            COMPONENTS="${COMPONENTS} cuda_crt libnvvm libnvjitlink"
+          else
+            COMPONENTS="${COMPONENTS} libnvjitlink"
+          fi
+
+          for component in ${COMPONENTS}; do
+            echo "--- Fetching ${component} ---"
+            REL_PATH=$(curl -sL "${CTK_JSON_URL}" | \
+              python -c "import sys, json; print(json.load(sys.stdin)['${component}']['${CTK_SUBDIR}']['relative_path'])")
+            COMPONENT_URL="${CTK_BASE_URL}/${REL_PATH}"
+            FILENAME=$(basename "${REL_PATH}")
+
+            curl -kLSs "${COMPONENT_URL}" -o "${FILENAME}"
+            TEMP_DIR=$(mktemp -d)
+            unzip -q "${FILENAME}" -d "${TEMP_DIR}"
+            cp -r "${TEMP_DIR}"/*/* "${CUDA_PATH}"/
+            rm -rf "${TEMP_DIR}" "${FILENAME}"
+            echo "  - installed ${component}"
+          done
+
+          echo ""
+          echo "=== CTK layout (note the space in the path) ==="
+          echo "CUDA_PATH='${CUDA_PATH}'"
+          ls "${CUDA_PATH}"
+
+          # Export as Windows-style path; keep the space intact.
+          CUDA_PATH_WIN=$(cygpath -w "${CUDA_PATH}")
+          CUDA_BIN_WIN=$(cygpath -w "${CUDA_PATH}/bin")
+
+          echo "CUDA_PATH=${CUDA_PATH_WIN}" >> "${GITHUB_ENV}"
+          echo "CUDA_HOME=${CUDA_PATH_WIN}" >> "${GITHUB_ENV}"
+          echo "${CUDA_BIN_WIN}"            >> "${GITHUB_PATH}"
+
+      - name: Verify nvcc works from the space-containing path
+        run: |
+          echo "CUDA_PATH='${CUDA_PATH}'"
+          which nvcc
+          nvcc --version
+
+      - name: Show what nvcc -v reports as INCLUDES (the line being parsed)
+        run: |
+          # Reproduce exactly what `generate_raw_ltoir.py::determine_include_flags`
+          # reads. On Windows nvcc prints verbose output to stdout.
+          nvcc -v __dummy 2>&1 | grep -E '^#\$ INCLUDES=' || true
+
+      - name: Clone numba-cuda
+        run: |
+          git clone "${{ inputs.numba_cuda_repo }}" numba-cuda
+          cd numba-cuda
+          git fetch --all --tags
+          git checkout "${{ inputs.numba_cuda_ref }}"
+          git log -1 --oneline
+
+      - name: Build numba-cuda wheel
+        run: |
+          cd numba-cuda
+          pip install --upgrade pip wheel setuptools
+          pip wheel --no-deps -w dist/ .
+          ls dist/
+
+      - name: Install numba-cuda wheel + runtime deps for fixture generation
+        run: |
+          cd numba-cuda
+          CUDA_MAJOR=$(echo "${{ inputs.cuda_version }}" | cut -d. -f1)
+          pip install dist/*.whl "cuda-bindings==${CUDA_MAJOR}.*"
+
+      - name: Build test fixtures (expected to fail without the shlex fix)
+        id: build_fixtures
+        run: |
+          cd numba-cuda/testing
+          nvcc --version
+          make -j $(nproc) GPU_CC=${{ inputs.gpu_cc }}
+
+      - name: Diagnostic on failure
+        if: failure() && steps.build_fixtures.conclusion == 'failure'
+        run: |
+          echo "==========================================================="
+          echo "Build-fixtures step FAILED."
+          echo
+          echo "If the log above shows an NVRTC error or 'cannot open header"
+          echo "file' errors after invoking 'python generate_raw_ltoir.py',"
+          echo "you hit the space-in-CUDA-path bug in"
+          echo "  testing/generate_raw_ltoir.py (determine_include_flags)."
+          echo
+          echo "Fix: use shlex.split(..., posix=False) instead of str.split()"
+          echo "when parsing the 'INCLUDES=' line from 'nvcc -v'."
+          echo "==========================================================="
+
+      - name: Summary (only reached with the fix applied)
+        run: |
+          echo "All .ltoir fixtures built successfully with a space-containing CUDA path:"
+          ls numba-cuda/testing/*.ltoir
