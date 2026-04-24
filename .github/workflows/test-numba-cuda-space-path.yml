@@ -17,8 +17,8 @@ on:
   workflow_dispatch:
     inputs:
       numba_cuda_repo:
-        description: "numba-cuda repo URL"
-        default: "https://github.com/NVIDIA/numba-cuda.git"
+        description: "numba-cuda repo URL (use NVIDIA/numba-cuda to reproduce bug, rluo8 fork to verify fix)"
+        default: "https://github.com/rluo8/numba-cuda.git"
       numba_cuda_ref:
         description: "numba-cuda git ref (branch/tag/sha)"
         default: "main"
