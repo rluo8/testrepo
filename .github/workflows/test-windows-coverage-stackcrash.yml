@@ -99,3 +99,44 @@ jobs:
             .coverage
             .coverage.*
           if-no-files-found: ignore
+
+  # Clean-room test: does PYTHONFAULTHANDLER=1 as an env var alone (no
+  # code changes, no faulthandler.enable() call) actually cause Python
+  # to print a Python stack trace to stderr on a Windows access
+  # violation, under Git Bash?  This is what we'd want to recommend
+  # for cuda-python's coverage workflow as a one-line diagnostic.
+  verify-pythonfaulthandler:
+    name: Verify PYTHONFAULTHANDLER=1 env var
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Baseline — crash WITHOUT PYTHONFAULTHANDLER
+        # Force a Windows access violation by reading at address 0.
+        # We expect: no Python stack on stderr, just bash reporting exit 139.
+        continue-on-error: true
+        run: |
+          python -c "import ctypes; ctypes.string_at(0)"
+
+      - name: Test — crash WITH PYTHONFAULTHANDLER=1 env var only
+        # Same crash, but with the env var.  If faulthandler is correctly
+        # enabled at Python startup we expect a Python stack on stderr
+        # showing "ctypes.string_at" before the process dies.
+        continue-on-error: true
+        env:
+          PYTHONFAULTHANDLER: "1"
+        run: |
+          python -c "import ctypes; ctypes.string_at(0)"
+
+      - name: Sanity — confirm env var was actually set
+        if: always()
+        env:
+          PYTHONFAULTHANDLER: "1"
+        run: |
+          echo "PYTHONFAULTHANDLER=$PYTHONFAULTHANDLER"
+          python -c "import sys, faulthandler; print('is_enabled=', faulthandler.is_enabled())"
