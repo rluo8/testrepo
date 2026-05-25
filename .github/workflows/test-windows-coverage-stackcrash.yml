@@ -1,0 +1,101 @@
+name: "Repro: Windows coverage segfault (exit 139)"
+
+# Reproduces the cuda-python Windows coverage step segfault on a
+# public github-hosted windows-latest runner.  Mimics
+#   https://github.com/NVIDIA/cuda-python/blob/main/.github/workflows/coverage.yml
+# specifically the "Run cuda.core tests (with 8MB stack)" step, but uses
+# this repo's Cython linetrace module instead of cuda-python wheels (we
+# don't have access to the internal GitLab registry from a public runner).
+
+on:
+  workflow_dispatch:
+    inputs:
+      python-version:
+        description: "Python version (3.14 matches cuda-python coverage CI)"
+        default: "3.14"
+        required: false
+
+defaults:
+  run:
+    # Force Git Bash so an unhandled Windows access violation gets
+    # translated to POSIX exit 139, exactly like the NVIDIA workflow.
+    shell: "bash --noprofile --norc -xeuo pipefail {0}"
+
+jobs:
+  segfault-matrix:
+    name: stack=${{ matrix.stack-mb }}MB / depth-cap matrix
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        stack-mb: [1, 4, 8, 16, 32]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ inputs.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - name: Print Windows env diagnostics
+        run: |
+          python -c "import sys, platform, struct; print('exe=', sys.executable); print('version=', sys.version); print('platform=', platform.platform()); print('bits=', struct.calcsize('P')*8)"
+          # systeminfo dump can be slow; only show OS lines
+          systeminfo | grep -E "^OS (Name|Version)|^System Type" || true
+          # Confirm shell is Git Bash
+          echo "BASH=$BASH"
+          echo "BASH_VERSION=$BASH_VERSION"
+
+      - name: Install build + test deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install Cython pytest pytest-cov numpy coverage
+
+      - name: Build mypackage with Cython linetrace (COVERAGE_MODE=1)
+        env:
+          COVERAGE_MODE: "1"
+        run: |
+          pip install -e . -v
+
+      - name: pip freeze
+        run: pip freeze
+
+      # Step 1: run the existing testrepo tests with --cov, matching the
+      # NVIDIA flow.  Most of these tests are shallow; this step usually
+      # succeeds and just validates the coverage plumbing.
+      - name: Run existing tests under coverage (stack=${{ matrix.stack-mb }}MB)
+        continue-on-error: true
+        env:
+          PYTHONFAULTHANDLER: "1"
+        run: |
+          python ci/tools/run_pytest_with_stack.py \
+            --stack-mb ${{ matrix.stack-mb }} \
+            -v --cov=./mypackage --cov-context=test --cov-config=.coveragerc tests
+
+      # Step 2: run the deep-recursion stress test.  This is the load
+      # that actually exhausts the worker thread stack under linetrace.
+      # We want to see at which stack-mb value pytest still segfaults.
+      - name: Run deep recursion stress test (stack=${{ matrix.stack-mb }}MB)
+        continue-on-error: true
+        env:
+          PYTHONFAULTHANDLER: "1"
+        run: |
+          python ci/tools/run_pytest_with_stack.py \
+            --stack-mb ${{ matrix.stack-mb }} \
+            -v -s --cov=./mypackage --cov-context=test --cov-config=.coveragerc \
+            tests/test_stack_pressure.py
+
+      - name: Echo last exit code (visible even if previous step exited 139)
+        if: always()
+        run: |
+          echo "previous step finished; matrix stack-mb=${{ matrix.stack-mb }}"
+
+      - name: Upload .coverage artifact if produced
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-stack-${{ matrix.stack-mb }}mb
+          path: |
+            .coverage
+            .coverage.*
+          if-no-files-found: ignore

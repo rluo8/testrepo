@@ -32,12 +32,18 @@ except ImportError:
     # Fallback if Cython not built
     def fast_multiply(a, b):
         return a * b
-    
+
     def fast_power(a, b):
         return a ** b
-    
+
     def sum_array(arr):
         return sum(arr)
+
+try:
+    from .cython_recursion import deep_recursion, chained_calls
+except ImportError:
+    deep_recursion = None
+    chained_calls = None
 
 __all__ = [
     # Calculator

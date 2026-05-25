@@ -46,6 +46,11 @@ extensions = [
         sources=["mypackage/cython_math.pyx"],
         extra_compile_args=extra_compile_args,
     ),
+    Extension(
+        "mypackage.cython_recursion",
+        sources=["mypackage/cython_recursion.pyx"],
+        extra_compile_args=extra_compile_args,
+    ),
 ]
 
 # Cythonize
